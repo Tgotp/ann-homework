@@ -1,0 +1,10 @@
+# mode: 0=Flat baseline, 1=Flat SIMD, 2=Flat OpenMP, 3=Flat OpenMP + SIMD, 4=SQ-SIMD, 5=PQ-SIMD, 6=PQ-SIMD + OpenMP
+mode=0
+threads=1
+schedule=static
+chunk=256
+top_p=2000
+pq_m=8
+pq_ks=256
+pq_iters=4
+pq_train=10000
