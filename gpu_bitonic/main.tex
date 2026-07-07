@@ -1,0 +1,521 @@
+% -*- coding: utf-8 -*-
+%-------------------------designed by zcf--------------
+\documentclass[UTF8,a4paper,10pt]{ctexart}
+\usepackage[left=3.17cm, right=3.17cm, top=2.74cm, bottom=2.74cm]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx,subfig}
+\usepackage{float}
+\usepackage{cite}
+\usepackage{caption}
+\usepackage{enumerate}
+\usepackage{booktabs} %表格
+\usepackage{multirow}
+\newcommand{\tabincell}[2]{\begin{tabular}{@{}#1@{}}#2\end{tabular}}  %表格强制换行
+%-------------------------字体设置--------------
+% \usepackage{times}
+\usepackage{ctex}
+\usepackage{makecell}
+
+\setCJKmainfont[ItalicFont=Noto Sans CJK SC Bold, BoldFont=Noto Serif CJK SC Black]{Noto Serif CJK SC}
+\newcommand{\yihao}{\fontsize{26pt}{36pt}\selectfont}           % 一号, 1.4 倍行距
+\newcommand{\erhao}{\fontsize{22pt}{28pt}\selectfont}          % 二号, 1.25倍行距
+\newcommand{\xiaoer}{\fontsize{18pt}{18pt}\selectfont}          % 小二, 单倍行距
+\newcommand{\sanhao}{\fontsize{16pt}{24pt}\selectfont}  %三号字
+\newcommand{\xiaosan}{\fontsize{15pt}{22pt}\selectfont}        % 小三, 1.5倍行距
+\newcommand{\sihao}{\fontsize{14pt}{21pt}\selectfont}            % 四号, 1.5 倍行距
+\newcommand{\banxiaosi}{\fontsize{13pt}{19.5pt}\selectfont}    % 半小四, 1.5倍行距
+\newcommand{\xiaosi}{\fontsize{12pt}{18pt}\selectfont}            % 小四, 1.5倍行距
+\newcommand{\dawuhao}{\fontsize{11pt}{11pt}\selectfont}       % 大五号, 单倍行距
+\newcommand{\wuhao}{\fontsize{10.5pt}{15.75pt}\selectfont}    % 五号, 单倍行距
+%-------------------------章节名----------------
+\usepackage{ctexcap}
+\CTEXsetup[name={,、},number={ \chinese{section}}]{section}
+\CTEXsetup[name={（,）},number={\chinese{subsection}}]{subsection}
+\CTEXsetup[name={,.},number={\arabic{subsubsection}}]{subsubsection}
+%-------------------------页眉页脚--------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{\kaishu \leftmark}
+% \chead{}
+\rhead{\kaishu GPU编程作业}%加粗\bfseries
+\lfoot{}
+\cfoot{\thepage}
+\rfoot{}
+\renewcommand{\headrulewidth}{0.1pt}
+\renewcommand{\footrulewidth}{0pt}%去掉横线
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}%标题横线
+\newcommand{\HRulegrossa}{\rule{\linewidth}{1.2mm}}
+%-----------------------伪代码------------------
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\floatname{algorithm}{Algorithm}
+\renewcommand{\algorithmicrequire}{\textbf{Input:}}
+\renewcommand{\algorithmicensure}{\textbf{Output:}}
+\usepackage{lipsum}
+\makeatletter
+\newenvironment{breakablealgorithm}
+  {% \begin{breakablealgorithm}
+  \begin{center}
+     \refstepcounter{algorithm}% New algorithm
+     \hrule height.8pt depth0pt \kern2pt% \@fs@pre for \@fs@ruled
+     \renewcommand{\caption}[2][\relax]{% Make a new \caption
+      {\raggedright\textbf{\ALG@name~\thealgorithm} ##2\par}%
+      \ifx\relax##1\relax % #1 is \relax
+         \addcontentsline{loa}{algorithm}{\protect\numberline{\thealgorithm}##2}%
+      \else % #1 is not \relax
+         \addcontentsline{loa}{algorithm}{\protect\numberline{\thealgorithm}##1}%
+      \fi
+      \kern2pt\hrule\kern2pt
+     }
+  }{% \end{breakablealgorithm}
+     \kern2pt\hrule\relax% \@fs@post for \@fs@ruled
+  \end{center}
+  }
+\makeatother
+%------------------------代码-------------------
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{
+breaklines,%自动换行
+basicstyle=\small,
+escapeinside=``,
+keywordstyle=\color{ blue!70} \bfseries,
+commentstyle=\color{red!50!green!50!blue!50},%
+stringstyle=\ttfamily,%
+extendedchars=false,%
+linewidth=\textwidth,%
+numbers=left,%
+numberstyle=\tiny \color{blue!50},%
+frame=trbl%
+rulesepcolor= \color{ red!20!green!20!blue!20}
+}
+%------------超链接----------
+\usepackage[colorlinks,linkcolor=black,anchorcolor=blue]{hyperref}
+%------------------------TODO-------------------
+\usepackage{enumitem,amssymb}
+\newlist{todolist}{itemize}{2}
+\setlist[todolist]{label=$\square$}
+% for check symbol
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+\newcommand{\done}{\rlap{$\square$}{\raisebox{2pt}{\large\hspace{1pt}\cmark}}\hspace{-2.5pt}}
+\newcommand{\wontfix}{\rlap{$\square$}{\large\hspace{1pt}\xmark}}
+%------------------------水印-------------------
+\usepackage{tikz}
+\usepackage{xcolor}
+\usepackage{eso-pic}
+
+\newcommand{\watermark}[3]{\AddToShipoutPictureBG{
+\parbox[b][\paperheight]{\paperwidth}{
+\vfill%
+\centering%
+\tikz[remember picture, overlay]%
+  \node [rotate = #1, scale = #2] at (current page.center)%
+    {\textcolor{gray!80!cyan!30!magenta!30}{#3}};
+\vfill}}}
+
+
+
+%———————————————————————————————————————————正文———————————————————————————————————————————————
+%----------------------------------------------
+\begin{document}
+\begin{titlepage}
+    \begin{center}
+    \includegraphics[width=0.8\textwidth]{NKU.png}\\[1cm]
+    \textsc{\Huge \kaishu{\textbf{南\ \ \ \ \ \ 开\ \ \ \ \ \ 大\ \ \ \ \ \ 学}} }\\[0.9cm]
+    \textsc{\huge \kaishu{\textbf{计\ \ 算\ \ 机\ \ 学\ \ 院}}}\\[0.5cm]
+    \textsc{\Large \textbf{并行程序设计GPU编程作业}}\\[0.8cm]
+    \HRule \\[0.9cm]
+    { \LARGE \bfseries 双调排序算法设计与GPU编程实验}\\[0.4cm]
+    \HRule \\[2.0cm]
+    \centering
+    \textsc{\LARGE 向东\kaishu{\ \ \ \ }}\\[0.5cm]
+    \textsc{\LARGE \kaishu{年级\ :\ 2025级}}\\[0.5cm]
+    \textsc{\LARGE \kaishu{专业\ :\ 计算机科学与技术}}\\[0.5cm]
+    \textsc{\LARGE \kaishu{指导教师\ :\ 王刚}}\\[0.5cm]
+    \vfill
+    {\Large \today}
+    \end{center}
+\end{titlepage}
+%-------------摘------要--------------
+\newpage
+\thispagestyle{empty}
+\renewcommand{\abstractname}{\kaishu \sihao \textbf{摘要}}
+    \begin{abstract}
+
+        \noindent  %顶格
+
+        双调排序（Bitonic Sort）是一种经典的并行排序算法，通过比较-交换网络实现，具有 $O(\log^2 n)$ 的并行时间复杂度。本文从理论分析和GPU编程实验两个角度对双调排序进行系统研究。在理论分析部分，设计了一维环网络拓扑上双调排序的进程映射方案：对于 $n$ 个元素映射到 $n$ 个进程的情况，采用连续编号映射，推导了各轮比较-交换的通信距离和总通信开销，证明在环网络上双调排序不是代价最优的；对于 $p < n$ 个进程的情况，采用块划分策略，推导了代价最优条件 $p = O(\sqrt{n / \log n})$。在GPU编程实验部分，基于NVIDIA CUDA平台在RTX 4090D上实现了双调排序，测试了从 $2^8$ 到 $2^{22}$ 共8个数据规模的性能。实验结果表明，在 $n = 4194304$ 时GPU相较CPU双调排序获得760.57倍加速，相较std::sort获得148.96倍加速，充分体现了GPU在大规模数据并行任务上的显著优势。
+
+        \textbf{\\\ 关键字：双调排序；一维环网络；GPU编程；CUDA；并行计算}\textbf{} \\\ \\\
+    \end{abstract}
+%----------------------------------------------------------------
+\tableofcontents
+%----------------------------------------------------------------
+\newpage
+\watermark{60}{10}{NKU}
+\setcounter{page}{1}
+
+%===============================================================
+%  PART I: 双调排序算法设计与分析
+%===============================================================
+\section{双调排序算法设计与分析}
+
+%-------------------------------------------------------
+\subsection{双调排序算法概述}
+
+双调排序由 Batcher 于 1968 年提出\cite{batcher1968}，是一种基于比较-交换网络的并行排序算法。其核心思想基于双调序列的性质。一个序列若先单调递增再单调递减（或反之），则称为双调序列。双调序列的关键性质是：通过双调合并，可以将长度为 $2^m$ 的双调序列转换为有序序列。
+
+对于 $n = 2^k$ 个元素，完整的双调排序包含 $k$ 个阶段（stage），阶段 $s$（$s = 1, 2, \ldots, k$）构建长度为 $2^s$ 的双调序列。每个阶段内包含 $s$ 个子步骤（step），子步骤的比较距离依次减半。排序网络的深度（比较-交换轮数）为：
+\begin{equation}
+D(n) = \sum_{i=1}^{k} i = \frac{k(k+1)}{2} = \frac{1}{2}\log_2 n(\log_2 n + 1)
+\end{equation}
+每轮包含 $n/2$ 个并行的比较-交换操作，总比较-交换次数为：
+\begin{equation}
+C(n) = \frac{n}{2} \cdot D(n) = \frac{n}{4} \log_2 n(\log_2 n + 1) = O(n \log^2 n)
+\end{equation}
+
+虽然双调排序的串行比较次数 $O(n \log^2 n)$ 不如最优比较排序的 $O(n \log n)$，但在并行模型中每轮的 $n/2$ 个比较-交换可以同时执行，使用 $n$ 个处理器的并行时间复杂度仅为 $O(\log^2 n)$。
+
+算法 \ref{alg:bitonic_seq} 给出了双调排序的串行伪代码。
+
+\begin{breakablealgorithm}
+\caption{串行双调排序}
+\label{alg:bitonic_seq}
+\begin{algorithmic}[1]
+\Require 长度为 $n$（2的幂）的数组 $a[0 \ldots n-1]$
+\Ensure 数组 $a$ 升序排列
+\For{$k \gets 2$ to $n$ step $k \gets k \times 2$}
+    \For{$j \gets k/2$ down to $1$ step $j \gets j/2$}
+        \For{$i \gets 0$ to $n-1$}
+            \State $partner \gets i \oplus j$
+            \If{$partner > i$}
+                \State $asc \gets ((i \ \&\ k) = 0)$ \Comment{方向标志位}
+                \If{$(a[i] > a[partner]) = asc$}
+                    \State $\text{swap}(a[i], a[partner])$
+                \EndIf
+            \EndIf
+        \EndFor
+    \EndFor
+\EndFor
+\end{algorithmic}
+\end{breakablealgorithm}
+
+算法核心在于 XOR 伙伴选择：步长为 $j$ 时，元素 $i$ 的通信伙伴为 $i \oplus j$。方向标志 $(i\ \&\ k) = 0$ 将序列交替分为升序段和降序段，从而构建更大的双调序列。
+
+%-------------------------------------------------------
+\subsection{一维环网络上 $n$ 进程的双调排序}
+
+\subsubsection{网络模型与映射}
+
+一维环网络由 $n$ 个处理节点 $P_0, P_1, \ldots, P_{n-1}$ 组成，$P_i$ 通过双向链路连接 $P_{(i-1) \bmod n}$ 和 $P_{(i+1) \bmod n}$。消息采用存储-转发方式，$P_i$ 与 $P_j$ 间通信距离为 $\text{dist}(i, j) = \min(|i - j|, n - |i - j|)$，最大距离为 $\lfloor n/2 \rfloor$。
+
+将 $n$ 个元素 $a_0, \ldots, a_{n-1}$ 映射到 $n$ 个进程，采用连续编号映射：进程 $P_i$ 持有元素 $a_i$。
+
+\subsubsection{通信模式分析}
+
+\textbf{引理 1：} 当 $j = 2^t$ 时，$|i - (i \oplus j)| = j$。
+
+\textbf{证明：} $i \oplus 2^t$ 仅翻转 $i$ 的第 $t$ 位。若该位原为 0，则 $i \oplus j = i + j$；若原为 1，则 $i \oplus j = i - j$。故数值差恰为 $j$。\hfill $\square$
+
+由引理 1，进程 $P_i$ 与通信伙伴 $P_{i \oplus j}$ 在环上的距离为 $\min(j, n-j)$。由于所有步长 $j$ 均为 2 的幂且不超过 $n/2$，因此通信距离恰好为 $j$——步长等于通信距离。
+
+\subsubsection{通信开销分析}
+
+定义参数：$t_s$ 为消息启动延迟，$t_w$ 为每字传输时间，$t_h$ 为每跳转发时间，$t_c$ 为一次比较-交换的本地计算时间。
+
+对于距离为 $j$ 的通信，单元素传递时间为 $2(t_s + t_w + j \cdot t_h)$。步长 $j = 2^t$ 的出现次数为 $\log n - t$（即在阶段 $s \geq t+1$ 中各出现一次）。
+
+总通信开销为：
+\begin{equation}
+\begin{aligned}
+T_{\text{comm}}^{\text{total}} &= \sum_{s=1}^{k} \sum_{d=0}^{s-1} 2(t_s + t_w + 2^d \cdot t_h) \\
+&= k(k+1)(t_s + t_w) + 2t_h \sum_{s=1}^{k} (2^s - 1) \\
+&= \frac{\log n(\log n + 1)}{2} \cdot (t_s + t_w) + 2t_h \cdot (2n - \log n - 2)
+\end{aligned}
+\end{equation}
+
+加上本地计算时间，并行总时间为：
+\begin{equation}
+T_p = \frac{\log n(\log n + 1)}{2} \cdot (t_s + t_w + t_c) + 2t_h \cdot (2n - \log n - 2)
+\end{equation}
+
+当 $n$ 较大时，$T_p = O(n \cdot t_h)$，由通信距离相关项主导。
+
+\subsubsection{代价最优分析}
+
+并行代价为 $n \times T_p$。由上式，$T_p = O(n)$，故 $\text{Cost} = O(n^2)$。而最佳串行比较排序为 $O(n \log n)$（或双调排序串行为 $O(n \log^2 n)$）。因此：
+\begin{equation}
+\frac{\text{Cost}}{\text{Serial Time}} = \frac{O(n^2)}{O(n \log n)} = O\left(\frac{n}{\log n}\right) \to \infty \quad (n \to \infty)
+\end{equation}
+
+在环网络上使用 $n$ 个进程的双调排序不是代价最优的。根本原因在于环网络直径 $\Omega(n)$ 导致大跨步通信代价过高。双调排序天然适合超立方体网络，此时通信距离恒为 1。在环上，$j = n/2$ 的步长产生的 $\Theta(n)$ 跳通信成为性能瓶颈。
+
+%-------------------------------------------------------
+\subsection{一维环网络上 $p$ 进程的双调排序（$p < n$）}
+
+当进程数 $p < n$ 时，每进程持有 $m = n/p$ 个元素。本节分析块划分策略下的映射方案。
+
+\subsubsection{块划分映射}
+
+将 $n$ 个元素按块均匀分配：进程 $P_i$ 持有连续块 $B_i = \{a[i \cdot m], \ldots, a[(i+1) \cdot m - 1]\}$。算法分为三个阶段。
+
+\textbf{阶段一：本地排序。} 每进程对本地 $m$ 个元素排序，时间复杂度 $O(m \log m)$。
+
+\textbf{阶段二：进程间双调合并。} 仅当步长 $j \geq m$ 时需要跨进程通信。在进程层面，通信步长为 $j_p = \lceil j/m \rceil$。需要通信的轮数为：
+\begin{equation}
+D_{\text{comm}} = D(n) - D(m) = \frac{1}{2}\bigl[\log n(\log n + 1) - \log m(\log m + 1)\bigr] = O(\log n \cdot \log p)
+\end{equation}
+
+每次通信传输 $m = n/p$ 个元素。总通信时间为：
+\begin{equation}
+T_{\text{comm}}^{(p)} = O\!\left(\log n \cdot \log p \cdot \bigl(t_s + \frac{n}{p} \cdot t_w + \frac{p}{2} \cdot t_h\bigr)\right)
+\end{equation}
+
+每进程的计算时间为处理每次通信后的双调合并：$T_{\text{comp}}^{(p)} = O(m \cdot \log n \cdot \log p)$。
+
+\textbf{阶段三：进程内合并。} 步长 $j < m$ 的比较-交换全部本地完成，无通信开销。
+
+\subsubsection{并行总时间与代价最优条件}
+
+\begin{equation}
+T_p = O\!\left(\frac{n}{p} \log n \log p\right) + O\!\left(\frac{n}{p} \log n \log p \cdot t_w\right) + O\!\left(p \log n \log p \cdot t_h\right)
+\end{equation}
+
+代价最优要求 $\text{Cost} / O(n \log n) = O(1)$：
+
+\begin{itemize}
+    \item \textbf{计算主导（小 $p$）：} $\text{Cost} = O(n \log n \log p)$，需 $\log p = O(1)$，即 $p = O(1)$。
+    \item \textbf{通信主导（大 $p$）：} $\text{Cost} = O(p^2 \log n \log p)$，需 $p^2 = O(n / \log p)$，即 $p = O(\sqrt{n / \log n})$。
+\end{itemize}
+
+\subsubsection{结论}
+
+环网络上 $p$ 进程双调排序的代价最优条件为 $p = O(\sqrt{n / \log n})$。对比超立方体网络上代价最优条件 $p = O(n / \log^2 n)$，环网络拓扑的可扩展性明显受限，其 $O(p)$ 的直径导致通信开销快速增长。
+
+%-------------------------------------------------------
+\subsection{理论分析小结}
+
+本节完成了双调排序在一维环网络上的映射算法设计与性能分析。对于 $n$ 元素 $n$ 进程的情况，连续编号映射方案下大跨步通信导致并行代价为 $O(n^2)$，不是代价最优的。对于 $p < n$ 进程的情况，块划分策略的代价最优条件为 $p = O(\sqrt{n / \log n})$。
+
+%===============================================================
+%  PART II: GPU编程实验
+%===============================================================
+\section{GPU编程实验：双调排序的CUDA实现}
+
+%-------------------------------------------------------
+\subsection{实验目标}
+
+本部分在NVIDIA GPU上实现双调排序的CUDA版本，主要目标包括：(1) 实现双调排序的GPU核函数；(2) 测试不同数据规模下的排序性能；(3) 与CPU串行实现进行性能对比；(4) 分析GPU实现的性能瓶颈和优化策略。
+
+%-------------------------------------------------------
+\subsection{CUDA实现设计}
+
+\subsubsection{全局内存版本}
+
+全局内存版本直接利用双调排序的固有并行性：每轮比较-交换中，$n/2$ 个元素对的操作相互独立，可分配给 GPU 的大量线程并行执行。
+
+核函数 \texttt{bitonic\_sort\_step\_global} 的核心设计为：每个线程处理一个或多个元素，使用 grid-stride loop 保证线程总数小于 $n$ 时仍覆盖所有元素。Host 端循环调用该核函数，依次执行所有 $D(n) = \frac{1}{2}\log n(\log n + 1)$ 轮操作。
+
+\begin{lstlisting}[language=C++]
+__global__ void bitonic_sort_step_global(float *data, int n,
+                                          int j, int k) {
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int stride = gridDim.x * blockDim.x;
+
+    for (; i < n; i += stride) {
+        unsigned int ixj = i ^ j;
+        if (ixj > i) {
+            int asc = ((i & k) == 0);
+            float a = data[i], b = data[ixj];
+            if ((a > b) == asc) {
+                data[i] = b;
+                data[ixj] = a;
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+\subsubsection{优化策略}
+
+实现中采用以下优化：(1) 每个线程先读取两个值到寄存器，比较后写回，减少全局内存访问次数；(2) 线程块大小设为 256，利用 grid-stride loop 保证负载均衡；(3) 合并访存优化：步长 $j$ 为较大的 2 的幂时，相邻线程的访存地址连续，可实现合并访存。
+
+%-------------------------------------------------------
+\subsection{实验设置}
+
+\subsubsection{实验平台}
+
+\begin{table}[H]
+\centering
+\caption{GPU实验平台配置}
+\label{tab:platform}
+\begin{tabular}{ll}
+\toprule
+项目 & 配置 \\
+\midrule
+GPU & NVIDIA GeForce RTX 4090 D（24GB，114 SMs，2520 MHz） \\
+CUDA 版本 & 12.8 \\
+CPU & Intel Xeon Platinum 8352V @ 2.10GHz（64核128线程） \\
+编译器 & nvcc + g++ 11.4.0 \\
+编译选项 & \texttt{-O3 -arch=sm\_61 -use\_fast\_math} \\
+操作系统 & Ubuntu 22.04 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{测试参数}
+
+\begin{table}[H]
+\centering
+\caption{测试参数设置}
+\label{tab:params}
+\begin{tabular}{lr}
+\toprule
+参数 & 值 \\
+\midrule
+数据规模 $n$ & $2^8, 2^{10}, 2^{12}, 2^{14}, 2^{16}, 2^{18}, 2^{20}, 2^{22}$ \\
+数据类型 & float（32-bit） \\
+重复次数 & 5（取平均） \\
+线程块大小 & 256 \\
+正确性验证 & 与CPU双调排序结果逐元素对比 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%-------------------------------------------------------
+\subsection{实验结果与分析}
+
+\subsubsection{正确性验证}
+
+所有测试规模下，GPU双调排序的排序结果与CPU双调排序完全一致，排序后的数组均为严格升序排列，验证了GPU核函数的正确性。
+
+\subsubsection{性能对比}
+
+\begin{table}[H]
+\centering
+\caption{GPU双调排序与CPU性能对比}
+\label{tab:results}
+\begin{tabular}{lrrrrr}
+\toprule
+数据规模 $n$ & GPU (ms) & CPU Bitonic (ms) & CPU std::sort (ms) & GPU/Bitonic 加速比 & GPU/std::sort 加速比 \\
+\midrule
+256      & 0.105 & 0.087   & 0.025   & 0.83$\times$   & 0.24$\times$ \\
+1024     & 0.156 & 0.485   & 0.127   & 3.11$\times$   & 0.81$\times$ \\
+4096     & 0.215 & 2.344   & 0.634   & 10.90$\times$  & 2.95$\times$ \\
+16384    & 0.282 & 6.659   & 1.334   & 23.61$\times$  & 4.73$\times$ \\
+65536    & 0.361 & 20.862  & 5.713   & 57.79$\times$  & 15.83$\times$ \\
+262144   & 0.430 & 99.080  & 25.223  & 230.42$\times$ & 58.66$\times$ \\
+1048576  & 0.849 & 461.548 & 103.732 & 543.64$\times$ & 122.18$\times$ \\
+4194304  & 2.788 & 2120.459& 415.296 & 760.57$\times$ & 148.96$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{结果分析}
+
+从表 \ref{tab:results} 可以得出以下结论：
+
+\textbf{（1）小规模数据（$n \leq 1024$）：GPU 处于劣势。} $n=256$ 时 GPU 耗时 0.105 ms，反而不如 CPU Bitonic（0.087 ms）和 std::sort（0.025 ms）。原因是 GPU 核函数的固定启动开销（约 5--10 $\mu$s/次）在 $O(\log^2 n)$ 次启动下已超过极小数量的 CPU 计算时间。$n=1024$ 时 GPU 刚超过 CPU Bitonic（3.11$\times$），但仍慢于 std::sort（0.81$\times$）。
+
+\textbf{（2）中等规模（$2^{12} \leq n \leq 2^{16}$）：GPU 优势迅速显现。} $n=4096$ 时 GPU 首次超越 std::sort（2.95$\times$），$n=16384$ 时达到 4.73$\times$，$n=65536$ 时达到 15.83$\times$。此阶段核函数启动开销被摊薄，GPU 的 114 个 SM 可同时运行数万个线程，而 CPU 仅有 64 个物理核心。
+
+\textbf{（3）大规模数据（$n \geq 2^{18}$）：GPU 加速比持续增长。} $n=4194304$ 时加速比达到 760.57$\times$（vs CPU Bitonic）和 148.96$\times$（vs std::sort）。此时 GPU 的计算吞吐和内存带宽均得到充分利用：RTX 4090D 全局内存带宽为 1008 GB/s，远超 CPU DDR4 带宽。值得注意的是，GPU 时间从 $n=256$ 到 $n=4194304$（规模增大 16384 倍）仅从 0.105 ms 增加到 2.788 ms（增大 27 倍），而 CPU Bitonic 从 0.087 ms 增加到 2120 ms（增大 24000 倍），展示了 GPU 在数据并行任务上的架构优势。
+
+\textbf{（4）与 std::sort 的对比。} std::sort 的 $O(n \log n)$ 在串行比较次数上优于双调排序的 $O(n \log^2 n)$，因此 GPU 加速比（vs std::sort）的增长斜率低于（vs CPU Bitonic）。在 $n=4194304$ 时 149$\times$ 的加速比表明 GPU 的大规模并行性有效弥补了双调排序本身较高的计算复杂度。
+
+\textbf{（5）性能瓶颈。} 该实现属于访存密集型 kernel：每轮每元素仅 1 次浮点比较和条件交换，计算密度极低。在 $n=4194304$ 时，253 次核函数启动、每轮约 34 MB 的数据传输（$n \times 4\text{B} \times 2\text{ reads} \times 1\text{ write}$），总数据传输约 8.5 GB。RTX 4090D 的 1008 GB/s 带宽在理想情况下约需 8.4 ms——实际耗时 2.788 ms 远低于此，说明合并访存与 L2 缓存命中有效降低了带宽需求。
+
+\subsubsection{进一步优化讨论}
+
+对于 $n \leq 1024$ 的小数组，可将数据加载到共享内存一次性完成排序，消除反复全局内存访问和核函数启动开销。对于大规模数据，可考虑：(1) 将多个连续步长合并到一个核函数中执行，减少 host-device 同步和核函数启动次数；(2) 利用 CUDA Stream 实现多数组并发排序。
+
+%===============================================================
+%  Conclusion
+%===============================================================
+\section{总结}
+
+本文系统地完成了双调排序的理论分析和GPU编程实验。在理论部分，设计了一维环网络上双调排序的进程映射方案，分析了 $n$ 进程和 $p < n$ 进程两种场景下的通信开销和代价最优条件。结果表明，由于环网络直径较大（$\Omega(n)$），双调排序在环网络上不是代价最优的；对于 $p$ 进程的情况，代价最优条件为 $p = O(\sqrt{n / \log n})$。
+
+在GPU编程实验部分，基于CUDA在RTX 4090D上实现了双调排序，测试了从 $2^8$ 到 $2^{22}$ 共8个数据规模。实验结果表明：小规模时GPU核函数启动开销占主导；$n \geq 4096$ 后GPU开始超越CPU；在 $n = 4194304$ 时，GPU相较CPU双调排序获得 760.57 倍加速，相较 std::sort 获得 148.96 倍加速。
+
+本作业综合运用了并行算法设计、网络拓扑分析和GPU编程三方面的知识。与之前完成的SIMD/OpenMP单机并行作业一起，形成了对ANNS系统中核心运算在不同并行框架下的完整性能认知。
+
+
+%===============================================================
+%  References
+%===============================================================
+\newpage
+\begin{thebibliography}{99}
+
+\bibitem{batcher1968} Batcher, K. E. ``Sorting networks and their applications.'' \textit{Proceedings of the Spring Joint Computer Conference}, 1968, pp. 307--314.
+
+\bibitem{grama2003} Grama, A., Gupta, A., Karypis, G., Kumar, V. \textit{Introduction to Parallel Computing}. 2nd ed., Addison-Wesley, 2003.
+
+\bibitem{quinn2004} Quinn, M. J. \textit{Parallel Programming in C with MPI and OpenMP}. McGraw-Hill, 2004.
+
+\bibitem{kumar1994} Kumar, V., Grama, A., Gupta, A., Karypis, G. \textit{Introduction to Parallel Computing: Design and Analysis of Algorithms}. Benjamin-Cummings, 1994.
+
+\bibitem{leighton1992} Leighton, F. T. \textit{Introduction to Parallel Algorithms and Architectures: Arrays, Trees, Hypercubes}. Morgan Kaufmann, 1992.
+
+\bibitem{cuda_sorting} Satish, N., Harris, M., Garland, M. ``Designing Efficient Sorting Algorithms for Manycore GPUs.'' \textit{IEEE International Symposium on Parallel \& Distributed Processing}, 2009.
+
+\bibitem{green2012} Green, O., McColl, R., Bader, D. A. ``GPU Merge Path: A GPU Merging Algorithm.'' \textit{Proceedings of the 26th ACM International Conference on Supercomputing}, 2012, pp. 331--340.
+
+\bibitem{owens2008} Owens, J. D., et al. ``GPU Computing.'' \textit{Proceedings of the IEEE}, vol. 96, no. 5, 2008, pp. 879--899.
+
+\end{thebibliography}
+
+
+%===============================================================
+%  Appendix
+%===============================================================
+\newpage
+\appendix
+
+\section{代码说明}
+
+\subsection{代码文件}
+
+\begin{table}[H]
+\centering
+\caption{代码文件清单}
+\label{tab:code_files}
+\begin{tabular}{ll}
+\toprule
+文件 & 作用 \\
+\midrule
+\texttt{src/bitonic\_sort\_cuda.cu} & GPU双调排序主程序，含CPU验证、性能测试框架 \\
+\texttt{src/bitonic\_sort\_cpu.cpp} & CPU双调排序与std::sort性能对比程序 \\
+\texttt{src/Makefile} & 编译脚本 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{编译与运行}
+
+在配备NVIDIA GPU和CUDA Toolkit的环境下：
+
+\begin{lstlisting}[language=bash]
+# 编译
+cd src && make
+
+# 运行完整性能测试（8个数据规模）
+./bitonic_sort_cuda
+
+# 测试指定规模（如 n=65536，重复5次）
+./bitonic_sort_cuda 65536 5
+
+# CPU对比测试
+./bitonic_sort_cpu
+\end{lstlisting}
+
+\subsection{源代码Git链接}
+
+\begin{lstlisting}
+https://github.com/Tgotp/ann-homework.git
+\end{lstlisting}
+
+\end{document}
