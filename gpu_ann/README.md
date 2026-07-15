@@ -18,6 +18,17 @@ If the dataset is unavailable, it generates deterministic synthetic vectors
 with the same default scale (`100000 x 96`) and validates GPU results against a
 CPU exact reference on a query subset.
 
+## Download DEEP100K
+
+The public DEEP base file is a 384 GB 1B-vector file. The helper script uses an
+HTTP Range request to download only the first 100K vectors and rewrites the
+`.fbin` header to `100000, 96`.
+
+```bash
+cd gpu_ann
+bash scripts/download_deep100k.sh /anndata
+```
+
 ## Build
 
 ```bash
