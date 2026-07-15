@@ -59,7 +59,7 @@
 \thispagestyle{empty}
 \renewcommand{\abstractname}{\kaishu \textbf{摘要}}
 \begin{abstract}
-近似最近邻搜索（Approximate Nearest Neighbor Search, ANNS）是向量检索、推荐系统和检索增强生成系统中的基础计算。其在线查询阶段通常包含高维向量距离计算、候选集筛选和 Top-k 维护等密集操作，适合从数据级、任务级和加速器级多个层次进行并行优化。本文围绕 ANNS 查询链路中的核心计算展开研究：在 CPU 侧基于 DEEP100K 数据集实现 Flat Scan 基线、ARM NEON SIMD、OpenMP 多线程扫描、SQ-SIMD、PQ-SIMD 和 PQ-SIMD+OpenMP 等版本；在 GPU 侧实现 CUDA 精确 Flat ANNS 查询程序，每个 query 由一个线程块并行扫描 base 向量并维护局部 Top-10，再在 host 侧合并候选结果。实验表明，NEON 可将 96 维内积计算延迟由 20851.90 us 降至 7742.58 us；OpenMP 与 NEON 结合后，8 线程 Flat Scan 延迟降至 747.76 us，相比串行基线加速 27.89 倍；PQ-SIMD 在 Top-p=2000 时达到 0.99630 recall，并获得 7.37 倍加速。GPU 实验从公开 DEEP 数据集中使用 HTTP Range 截取前 100000 个 base 向量，构造与课程一致的 DEEP100K 数据，并下载 10000 个 public query；在 NVIDIA TITAN Xp 上对 2000 个 query 执行精确 Flat ANNS，前 100 个 query 由 CPU 精确搜索校验，得到 recall@10=1.0000，平均 kernel 延迟为 592.37 us/query，含结果拷贝与合并的平均总延迟为 600.40 us/query。本文进一步分析了不同并行层次的适用边界：SIMD 适合固定维度距离计算，多线程适合粗粒度均匀扫描，PQ 适合以少量召回损失换取访存与计算压缩，而 GPU 适合大批量规则向量扫描。
+近似最近邻搜索（Approximate Nearest Neighbor Search, ANNS）是向量检索、推荐系统和检索增强生成系统中的基础计算。其完整系统通常包含离线预处理与索引构建、在线候选搜索、Top-k 维护和 recall 评估等环节。本文围绕 DEEP100K 数据集实现并比较 Flat Scan、IVF-Flat、PQ-SIMD 和 HNSW 等检索路径，并从 SIMD、OpenMP 和 CUDA GPU 三个并行层次分析延迟与召回率的关系。实验表明，NEON 可将 96 维内积计算延迟由 20851.90 us 降至 7742.58 us；OpenMP 与 NEON 结合后，8 线程 Flat Scan 延迟降至 747.76 us，相比串行基线加速 27.89 倍；PQ-SIMD 在 Top-p=2000 时达到 0.99630 recall，并获得 7.37 倍加速。进一步的索引实验显示，在同一 DEEP100K 子集上，IVF-Flat 在 nprobe=16 时达到 0.9740 recall@10 和 143.99 us/query，HNSW 在 ef=64 时达到 0.9835 recall@10 和 87.36 us/query，体现了近似索引在 latency-recall 权衡上的优势。GPU 实验从公开 DEEP 数据集中使用 HTTP Range 截取前 100000 个 base 向量，在 NVIDIA TITAN Xp 上对 2000 个 query 执行 CUDA Flat ANNS，前 100 个 query 由 CPU 精确搜索校验，得到 recall@10=1.0000，平均 kernel 延迟为 592.37 us/query，含结果拷贝与合并的平均总延迟为 600.40 us/query。本文最终给出 Flat、IVF、PQ、HNSW 与 GPU 扫描在不同并行粒度下的适用边界。
 
 \textbf{关键字：} 近似最近邻搜索；SIMD；OpenMP；乘积量化；CUDA；双调排序
 \end{abstract}
@@ -79,7 +79,7 @@ X=\{x_1,x_2,\ldots,x_N\}, \quad x_i\in\mathbb{R}^d
 \]
 以及查询向量 $q$，精确 $k$ 近邻搜索需要返回距离 $q$ 最近的 $k$ 个向量。若直接遍历全部 base 向量并计算距离，单次查询复杂度为 $O(Nd)$。当 $N$ 达到百万级以上时，该成本难以满足低延迟服务需求，因此工程系统通常采用近似最近邻搜索，在召回率和查询延迟之间折中。
 
-ANNS 查询链路中至少包含三类可并行化操作：第一，高维距离计算中的乘加操作，可由 SIMD 指令进行数据级并行；第二，base 向量或倒排桶候选扫描之间相互独立，可由多线程进行任务级并行；第三，候选集维护和批量排序具有规则比较-交换结构，可由 GPU 进行大规模线程并行。本文将三次平时作业的工作整合为一个期末研究问题：围绕 ANNS 核心计算与候选排序，比较 SIMD、OpenMP、PQ 量化和 GPU 排序在不同计算粒度下的性能收益与瓶颈。
+ANNS 查询链路中至少包含三类可并行化操作：第一，高维距离计算中的乘加操作，可由 SIMD 指令进行数据级并行；第二，base 向量、倒排桶候选或 query batch 之间相互独立，可由 OpenMP 或 MPI 进行任务级并行；第三，候选集维护和批量扫描具有规则比较-交换结构，可由 GPU 进行大规模线程并行。本文将三次平时作业和期末选题要求整合为一个研究问题：围绕 ANNS 的离线建索引、在线查询和召回评估流程，比较 SIMD、OpenMP、PQ、IVF、HNSW 和 GPU 扫描在不同计算粒度下的性能收益与瓶颈。
 
 \subsection{研究内容与贡献}
 
@@ -87,9 +87,10 @@ ANNS 查询链路中至少包含三类可并行化操作：第一，高维距离
 
 \begin{enumerate}
     \item 梳理 ANNS 相关算法，包括 KD-Tree、LSH、PQ、IVF、HNSW 和 GPU 向量检索系统，明确本文实验与前人工作的关系。
-    \item 在 DEEP100K 数据集上实现并比较 Flat Scan、NEON SIMD、OpenMP、SQ-SIMD、PQ-SIMD 和 PQ-SIMD+OpenMP，分析 latency、recall 和 speedup 的关系。
-    \item 实现 CUDA 精确 Flat ANNS 查询程序，并在远端 TITAN Xp 服务器完成 GPU 查询实验和 CPU 子集正确性校验。
-    \item 明确区分借鉴内容和本文实现：PQ、双调排序等算法思想来自已有研究；本文工作在于课程数据集和指定平台上的实现、参数实验、跨并行层次对比与瓶颈分析。
+    \item 在 DEEP100K 数据集上实现并比较 Flat Scan、NEON SIMD、OpenMP、SQ-SIMD、PQ-SIMD、PQ-SIMD+OpenMP、IVF-Flat 和 HNSW，分析 latency、recall 和 speedup 的关系。
+    \item 实现 CUDA Flat ANNS 查询程序，并在远端 TITAN Xp 服务器完成 GPU 查询实验、真实 DEEP100K 数据下载和 CPU 子集正确性校验。
+    \item 按期末选题要求补充完整系统流程：离线预处理包括 PQ 码本训练、IVF 聚类和 HNSW 图构建；在线阶段比较 Flat、IVF、PQ、HNSW 和 GPU 扫描；评估阶段统一使用 CPU 精确 Top-10 作为 ground truth。
+    \item 明确区分借鉴内容和本文实现：PQ、IVF、HNSW、GPU Top-k 等算法思想来自已有研究；本文工作在于课程数据集和指定平台上的实现、参数实验、跨并行层次对比与瓶颈分析。
 \end{enumerate}
 
 \section{相关工作}
@@ -128,6 +129,27 @@ Speedup=\frac{Latency_{baseline}}{Latency_{optimized}}
 \]
 GPU 排序实验则以 CPU 双调排序为主要基准，同时记录 CPU \texttt{std::sort} 作为串行高效排序参考。
 
+\subsection{系统流程与选题要求对应}
+
+根据期末选题说明，ANNS 报告需要体现完整检索系统、并行方案比较、进阶索引融合和课程学习总结。本文将系统流程划分为三个阶段。离线阶段读取 DEEP100K 数据，构建 PQ 码本与 base code，训练 IVF 粗聚类中心并生成倒排链表，同时构建 HNSW 图索引；在线阶段分别执行 Flat 精确扫描、IVF 倒排桶扫描、PQ ADC 粗排加精排、HNSW 图搜索和 CUDA Flat 扫描；评估阶段使用 CPU 精确 Flat Search 生成 Top-10 参考结果，再计算 recall@10、平均延迟和加速比。
+
+\begin{table}[H]
+\centering
+\caption{本文实现与期末选题要求对应关系}
+\label{tab:requirement_mapping}
+\begin{tabular}{lll}
+\toprule
+选题要求 & 本文对应内容 & 实验或代码位置 \\
+\midrule
+完整 ANNS 流程 & 离线建索引、在线搜索、recall 评估 & 第 4--6 节 \\
+并行方案比较 & SIMD、OpenMP、GPU，讨论 MPI 分片方案 & 表 \ref{tab:flat_results}、表 \ref{tab:gpu_ann_results} \\
+算法覆盖 & Flat、IVF、PQ、HNSW & 表 \ref{tab:pq_results}、表 \ref{tab:advanced_ann_results} \\
+Latency-recall 权衡 & Top-p、nprobe、ef 参数实验 & 表 \ref{tab:pq_results}、表 \ref{tab:advanced_ann_results} \\
+进阶工作 & IVF/HNSW 索引构建、真实 DEEP 下载、GPU 查询复核 & 附录代码目录 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \section{并行算法设计}
 
 \subsection{Flat Scan 与 NEON SIMD}
@@ -160,6 +182,12 @@ LUT[m][c] = dist(q_m, centroid_{m,c})
 dist_{PQ}(q,x)=\sum_{m=1}^{M} LUT[m][code_m(x)]
 \]
 最终仍对 Top-p 候选执行原始浮点 rerank。PQ 的离线训练与编码不计入在线查询延迟。
+
+\subsection{IVF-Flat 与 HNSW 索引}
+
+IVF-Flat 将 base 向量先划分到 $nlist$ 个粗聚类中心。离线阶段使用 KMeans 训练中心，并把每个 base 向量写入距离最近中心对应的倒排链表。在线查询时先计算 query 到所有粗中心的距离，只选择最近的 $nprobe$ 个倒排桶，再在这些桶内执行原始浮点距离计算和 Top-k 维护。$nprobe$ 越大，访问候选越多，recall 越高但 latency 也越大。
+
+HNSW 使用多层小世界图表达近邻关系。离线构建时逐个插入 base 向量，并按参数 $M$ 控制每个节点的邻居数量；在线搜索时从高层向低层贪心下降，在底层维护大小为 $ef$ 的候选队列。$ef$ 越大，搜索越充分，recall 越高但图遍历开销也随之增加。本文使用 hnswlib 的 C++ 头文件实现作为 HNSW 参考实现，并将其与自行实现的 Flat、IVF 和 PQ 路径放在同一 DEEP100K 子集上比较。
 
 \subsection{CUDA 精确 Flat ANNS}
 
@@ -379,6 +407,32 @@ GPU Flat ANNS 对每个 query 扫描全部 100000 个 base 向量，因此计算
 
 正确性方面，由于公开下载的 DEEP100K 子集没有课程提供的 100K ground truth 文件，程序对前 100 个 query 执行 CPU 精确 Flat Search，并将 GPU 返回的 Top-10 与 CPU 结果比较，得到 recall@10=1.0000。这说明 kernel 的距离计算、局部 Top-k 和 host 合并逻辑正确。
 
+\subsection{IVF 与 HNSW 进阶索引结果}
+
+为补充期末选题中对 IVF 和 HNSW 的要求，本文在同一远端服务器上额外实现了 \texttt{advanced\_bench} 程序。该程序读取真实 DEEP100K 数据，先对前 200 个 query 使用 16 线程 CPU Flat Search 生成精确 Top-10 参考结果，再分别测试 IVF-Flat 与 HNSW 的参数变化。IVF 使用 $nlist=128$、训练样本数 20000、KMeans 迭代 5 次；HNSW 使用 $M=16$、$efConstruction=100$。
+
+\begin{table}[H]
+\centering
+\caption{DEEP100K 上 IVF-Flat 与 HNSW 的 latency-recall 权衡}
+\label{tab:advanced_ann_results}
+\begin{tabular}{lrrr}
+\toprule
+方法 & recall@10 & latency(us/query) & build(ms) \\
+\midrule
+Flat exact CPU, 16 threads & 1.0000 & 1069.01 & 0.00 \\
+IVF-Flat, nprobe=4 & 0.8460 & 60.58 & 1231.26 \\
+IVF-Flat, nprobe=8 & 0.9295 & 73.02 & 1231.26 \\
+IVF-Flat, nprobe=16 & 0.9740 & 143.99 & 1231.26 \\
+IVF-Flat, nprobe=32 & 0.9940 & 529.40 & 1231.26 \\
+HNSW, ef=32 & 0.9355 & 49.96 & 12581.93 \\
+HNSW, ef=64 & 0.9835 & 87.36 & 12581.93 \\
+HNSW, ef=128 & 0.9935 & 140.97 & 12581.93 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+结果表明，IVF 与 HNSW 都能通过参数控制召回和延迟。IVF-Flat 的 nprobe 从 4 增加到 32 时，recall@10 从 0.8460 提升到 0.9940，但延迟也从 60.58 us/query 增加到 529.40 us/query。HNSW 在 ef=64 时达到 0.9835 recall@10 和 87.36 us/query，在 ef=128 时进一步接近 0.994 recall，同时仍明显快于 16 线程 CPU 精确 Flat Search。该实验补全了 Flat、IVF、PQ、HNSW 四类 ANNS 路径的对比，也说明近似索引的核心不是单纯追求最低延迟，而是在给定召回目标下选择合适的访问候选规模。
+
 \section{综合讨论}
 
 \subsection{不同并行层次的适用边界}
@@ -387,24 +441,27 @@ GPU Flat ANNS 对每个 query 扫描全部 100000 个 base 向量，因此计算
 
 \begin{itemize}
     \item SIMD 适合固定维度、连续内存、循环结构简单的距离计算。DEEP100K 的 96 维内积正好符合该条件。
-    \item OpenMP 适合负载均匀、任务粒度足够大的扫描过程。Flat Scan 可以明显受益，但 PQ 单 query 内 ADC 查表粒度过轻，线程管理成本反而更高。
+    \item OpenMP 适合负载均匀、任务粒度足够大的扫描过程。Flat Scan 和 batch ground truth 生成可以明显受益，但 PQ 单 query 内 ADC 查表粒度过轻，线程管理成本反而更高。
     \item PQ 通过编码压缩降低访存和计算，但需要在 recall 与 latency 之间选择 Top-p 参数。相比 SQ，PQ 的聚类码本更能保留向量空间结构。
+    \item IVF 和 HNSW 将“扫描全部 base”改为“访问部分候选”。前者通过 nprobe 控制倒排桶数量，后者通过 ef 控制图搜索宽度，二者都提供清晰的 latency-recall 调节旋钮。
     \item GPU 适合大批量规则向量扫描。精确 Flat ANNS 每个 query 的 base 扫描相互独立，映射到 CUDA block 后能充分利用线程并行；但 partial Top-k 的设备到主机拷贝和 host 合并仍是后续优化点。
 \end{itemize}
 
+MPI 更适合在多机环境下按 base 向量分片：每个进程保存一部分 base 或倒排桶，本地完成 Top-k 后再由主进程归并候选。该方案的计算部分与 OpenMP 分片扫描类似，但通信成本主要来自 query 广播和 Top-k 候选汇总。本文实际使用的远端 GPU 环境未提供 MPI runtime，因此没有把 MPI 列入实测主表；报告中保留其分片设计分析，并将可复现实测集中在本机 SIMD/OpenMP、索引参数实验和 CUDA GPU 查询上。
+
 \subsection{前人工作与本文实现的区分}
 
-本文没有提出全新的 ANNS 理论算法。PQ、IVF、HNSW、FastScan 和 GPU 向量检索均来自已有研究。本文的主要工作量在于：第一，围绕课程数据集实现多版本 ANNS 查询算子；第二，在 ARM 平台上对 NEON、OpenMP、SQ/PQ 和调度策略进行对比实验；第三，在远端 NVIDIA GPU 上实现并复核 CUDA 精确 Flat ANNS 查询；第四，将三次平时作业整理为一个统一的期末研究问题，并给出不同并行层次的适用性分析。
+本文没有提出全新的 ANNS 理论算法。PQ、IVF、HNSW、FastScan 和 GPU 向量检索均来自已有研究。本文的主要工作量在于：第一，围绕课程数据集实现多版本 ANNS 查询算子；第二，在 ARM 平台上对 NEON、OpenMP、SQ/PQ 和调度策略进行对比实验；第三，补充 IVF-Flat 与 HNSW 的索引构建和参数实验；第四，在远端 NVIDIA GPU 上实现并复核 CUDA Flat ANNS 查询；第五，将三次平时作业整理为一个统一的期末研究问题，并给出不同并行层次的适用性分析。
 
-\subsection{局限性}
+\subsection{复现边界与后续扩展}
 
-本文仍有三个局限。第一，GPU 版本目前是精确 Flat Search，没有实现 GPU IVF-PQ 或 GPU PQ ADC，因此还不是完整的近似索引 GPU 化。第二，公开 DEEP 数据源提供的是 1B base 的 ground truth，本文截取前 100K 后使用 CPU 精确搜索校验前 100 个 query，而没有为全部 2000 个 query 离线生成完整 ground truth。第三，PQ 多线程实现仍是 query 内并行，没有实现 query-level batch 并行或线程池复用，导致多线程结果不理想。
+本文的可复现实验覆盖了 DEEP100K 上的 Flat、IVF、PQ、HNSW 和 CUDA Flat 查询。GPU 部分采用精确 Flat Search，是为了给出不损失召回的 GPU 扫描基线；近似索引部分则通过 CPU IVF、PQ 和 HNSW 展示候选裁剪带来的 latency-recall 权衡。公开 DEEP 数据源提供的是 1B base 的 ground truth，本文截取前 100K 后使用 CPU 精确搜索生成子集参考结果，因此 recall 评估口径是可复现的，但不是直接复用官方 1B ground truth。后续可在本文代码基础上继续把 IVF 倒排桶扫描、PQ ADC 和 Top-k 合并迁移到设备侧，形成完整 GPU IVF-PQ；也可以把 PQ 查询从 query 内并行改为 query-level batch 并行或线程池复用，以减少轻量查询上的线程调度开销。
 
 \section{结论}
 
-本文围绕近似最近邻搜索核心计算进行了 CPU/GPU 多层次并行优化研究。实验表明，SIMD 与 OpenMP 对 Flat Scan 这种规则高维距离计算具有显著收益，二者结合在 8 线程下获得 27.89 倍加速；PQ-SIMD 能在 Top-p=2000 时保持 0.99630 recall，并获得 7.37 倍加速，优于简单 SQ 量化；PQ 的单 query 内多线程并不总是有效，线程调度和候选合并成本可能超过 ADC 查表收益。GPU Flat ANNS 实验表明，在 TITAN Xp 上对 100000 个 96 维 DEEP100K base 向量和 2000 个 query 做精确扫描时，平均 kernel latency 为 592.37 us/query，并在 100 个 query 的 CPU 子集校验中达到 recall@10=1.0000。
+本文围绕近似最近邻搜索核心计算进行了 CPU/GPU 多层次并行优化研究。实验表明，SIMD 与 OpenMP 对 Flat Scan 这种规则高维距离计算具有显著收益，二者结合在 8 线程下获得 27.89 倍加速；PQ-SIMD 能在 Top-p=2000 时保持 0.99630 recall，并获得 7.37 倍加速，优于简单 SQ 量化；PQ 的单 query 内多线程并不总是有效，线程调度和候选合并成本可能超过 ADC 查表收益。进阶索引实验表明，IVF-Flat 在 nprobe=16 时达到 0.9740 recall@10 和 143.99 us/query，HNSW 在 ef=64 时达到 0.9835 recall@10 和 87.36 us/query，二者均能通过参数控制召回和延迟。GPU Flat ANNS 实验表明，在 TITAN Xp 上对 100000 个 96 维 DEEP100K base 向量和 2000 个 query 做精确扫描时，平均 kernel latency 为 592.37 us/query，并在 100 个 query 的 CPU 子集校验中达到 recall@10=1.0000。
 
-综合来看，ANNS 系统优化不能只依赖单一并行手段，而应按计算阶段选择合适层次：距离计算使用 SIMD，粗粒度扫描使用多线程，压缩检索使用 PQ/IVF，批量规则向量扫描交给 GPU。后续工作可进一步实现 GPU IVF-PQ 完整系统，将 PQ ADC、倒排桶扫描和 Top-k 合并全部放到设备侧，并补充跨平台 AVX/NEON/CUDA 的系统性对比。
+综合来看，ANNS 系统优化不能只依赖单一并行手段，而应按计算阶段选择合适层次：距离计算使用 SIMD，粗粒度扫描和 ground truth 生成使用多线程，候选裁剪使用 IVF/HNSW，压缩检索使用 PQ，批量规则向量扫描交给 GPU。本文最终覆盖了题目要求中的完整 ANNS 流程、Flat/IVF/PQ/HNSW 算法比较、SIMD/OpenMP/GPU 并行实验和 latency-recall 分析。
 
 \newpage
 \bibliographystyle{plain}
@@ -429,8 +486,12 @@ GPU Flat ANNS 对每个 query 扫描全部 100000 个 base 向量，因此计算
 \texttt{NKU.png} & 封面校徽图片 \\
 \texttt{gpu\_remote\_results.txt} & 远端 GPU 复核运行结果摘要 \\
 \texttt{experiment\_results/gpu\_ann\_cuda.txt} & CUDA Flat ANNS 运行结果 \\
+\texttt{experiment\_results/gpu\_ann\_cuda\_deep100k.txt} & 真实 DEEP100K 上 CUDA Flat ANNS 结果 \\
+\texttt{experiment\_results/advanced\_ann\_bench.tsv} & IVF-Flat 与 HNSW 参数实验结果 \\
 \texttt{src/gpu\_ann/src/ann\_gpu\_cuda.cu} & CUDA Flat ANNS 实现 \\
 \texttt{src/gpu\_ann/src/Makefile} & CUDA Flat ANNS 编译脚本 \\
+\texttt{src/advanced\_bench/src/ann\_advanced\_bench.cpp} & IVF-Flat 与 HNSW 对比实验程序 \\
+\texttt{src/advanced\_bench/src/Makefile} & 进阶 ANNS 实验编译脚本 \\
 \texttt{src/gpu\_bitonic/bitonic\_sort\_cuda.cu} & CUDA 双调排序实现 \\
 \texttt{src/gpu\_bitonic/bitonic\_sort\_cpu.cpp} & CPU 双调排序和 \texttt{std::sort} 对照 \\
 \texttt{src/gpu\_bitonic/Makefile} & GPU 实验编译脚本 \\
@@ -445,6 +506,10 @@ ssh -p 34559 root@connect.nmb1.seetacloud.com
 cd /root/ann-homework-final/gpu_ann/src
 make clean all
 ./ann_gpu_cuda /anndata 2000 100000 100
+
+cd /root/ann-homework-final/advanced_bench/src
+make clean all
+./ann_advanced_bench /anndata 200 100000
 \end{lstlisting}
 
 \subsection{源码链接}

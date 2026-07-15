@@ -1,0 +1,9 @@
+name	recall	latency_us	build_ms	extra
+flat_exact_cpu	1.000000	1069.01	0	threads=16
+ivf_flat_nprobe4	0.846000	60.584	1231.258	nlist=128
+ivf_flat_nprobe8	0.929500	73.019	1231.258	nlist=128
+ivf_flat_nprobe16	0.974000	143.992	1231.258	nlist=128
+ivf_flat_nprobe32	0.994000	529.400	1231.258	nlist=128
+hnsw_ef32	0.935500	49.956	12581.934	M=16 efC=100
+hnsw_ef64	0.983500	87.359	12581.934	M=16 efC=100
+hnsw_ef128	0.993500	140.973	12581.934	M=16 efC=100
