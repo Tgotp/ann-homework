@@ -1,0 +1,458 @@
+% -*- coding: utf-8 -*-
+\documentclass[UTF8,a4paper,10pt]{ctexart}
+\usepackage[left=3.17cm,right=3.17cm,top=2.74cm,bottom=2.74cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{caption}
+\usepackage{cite}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+\usepackage{fancyhdr}
+
+\pagestyle{fancy}
+\lhead{\kaishu \leftmark}
+\rhead{\kaishu 并行程序设计期末研究报告}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.1pt}
+\renewcommand{\footrulewidth}{0pt}
+\newcommand{\HRule}{\rule{\linewidth}{0.5mm}}
+
+\lstset{
+  breaklines=true,
+  basicstyle=\small\ttfamily,
+  keywordstyle=\color{blue!70}\bfseries,
+  commentstyle=\color{green!40!black},
+  stringstyle=\color{red!60!black},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  frame=single,
+  columns=fullflexible
+}
+
+\begin{document}
+
+\begin{titlepage}
+    \begin{center}
+    \includegraphics[width=0.8\textwidth]{NKU.png}\\[1cm]
+    \textsc{\Huge \kaishu{\textbf{南\ \ \ \ \ \ 开\ \ \ \ \ \ 大\ \ \ \ \ \ 学}} }\\[0.9cm]
+    \textsc{\huge \kaishu{\textbf{计\ \ 算\ \ 机\ \ 学\ \ 院}}}\\[0.5cm]
+    \textsc{\Large \textbf{并行程序设计期末研究报告}}\\[0.8cm]
+    \HRule \\[0.9cm]
+    { \LARGE \bfseries 近似最近邻搜索的 CPU/GPU 多层次并行优化研究}\\[0.4cm]
+    \HRule \\[2.0cm]
+    \centering
+    \textsc{\LARGE 向东}\\[0.5cm]
+    \textsc{\LARGE \kaishu{年级\ :\ 2025级}}\\[0.5cm]
+    \textsc{\LARGE \kaishu{专业\ :\ 计算机科学与技术}}\\[0.5cm]
+    \textsc{\LARGE \kaishu{指导教师\ :\ 王刚}}\\[0.5cm]
+    \vfill
+    {\Large \today}
+    \end{center}
+\end{titlepage}
+
+\newpage
+\thispagestyle{empty}
+\renewcommand{\abstractname}{\kaishu \textbf{摘要}}
+\begin{abstract}
+近似最近邻搜索（Approximate Nearest Neighbor Search, ANNS）是向量检索、推荐系统和检索增强生成系统中的基础计算。其在线查询阶段通常包含高维向量距离计算、候选集筛选和 Top-k 维护等密集操作，适合从数据级、任务级和加速器级多个层次进行并行优化。本文围绕 ANNS 查询链路中的核心计算展开研究：在 CPU 侧基于 DEEP100K 数据集实现 Flat Scan 基线、ARM NEON SIMD、OpenMP 多线程扫描、SQ-SIMD、PQ-SIMD 和 PQ-SIMD+OpenMP 等版本；在 GPU 侧实现 CUDA 精确 Flat ANNS 查询程序，每个 query 由一个线程块并行扫描 base 向量并维护局部 Top-10，再在 host 侧合并候选结果。实验表明，NEON 可将 96 维内积计算延迟由 20851.90 us 降至 7742.58 us；OpenMP 与 NEON 结合后，8 线程 Flat Scan 延迟降至 747.76 us，相比串行基线加速 27.89 倍；PQ-SIMD 在 Top-p=2000 时达到 0.99630 recall，并获得 7.37 倍加速。由于远端 GPU 服务器未挂载课程 DEEP100K 数据，GPU ANNS 使用固定随机种子的 100000 个 96 维合成 base 向量和 2000 个 query 复现实验，在 NVIDIA TITAN Xp 上达到 recall@10=1.0000，平均 kernel 延迟为 609.41 us/query，含结果拷贝与合并的平均总延迟为 617.81 us/query。本文进一步分析了不同并行层次的适用边界：SIMD 适合固定维度距离计算，多线程适合粗粒度均匀扫描，PQ 适合以少量召回损失换取访存与计算压缩，而 GPU 适合大批量规则向量扫描。
+
+\textbf{关键字：} 近似最近邻搜索；SIMD；OpenMP；乘积量化；CUDA；双调排序
+\end{abstract}
+
+\newpage
+\tableofcontents
+\newpage
+\setcounter{page}{1}
+
+\section{引言}
+
+\subsection{研究背景}
+
+深度学习模型通常将文本、图像和音频等非结构化对象编码为高维向量，语义检索问题随之转化为向量空间中的最近邻搜索。给定数据集
+\[
+X=\{x_1,x_2,\ldots,x_N\}, \quad x_i\in\mathbb{R}^d
+\]
+以及查询向量 $q$，精确 $k$ 近邻搜索需要返回距离 $q$ 最近的 $k$ 个向量。若直接遍历全部 base 向量并计算距离，单次查询复杂度为 $O(Nd)$。当 $N$ 达到百万级以上时，该成本难以满足低延迟服务需求，因此工程系统通常采用近似最近邻搜索，在召回率和查询延迟之间折中。
+
+ANNS 查询链路中至少包含三类可并行化操作：第一，高维距离计算中的乘加操作，可由 SIMD 指令进行数据级并行；第二，base 向量或倒排桶候选扫描之间相互独立，可由多线程进行任务级并行；第三，候选集维护和批量排序具有规则比较-交换结构，可由 GPU 进行大规模线程并行。本文将三次平时作业的工作整合为一个期末研究问题：围绕 ANNS 核心计算与候选排序，比较 SIMD、OpenMP、PQ 量化和 GPU 排序在不同计算粒度下的性能收益与瓶颈。
+
+\subsection{研究内容与贡献}
+
+本文工作包括以下四部分。
+
+\begin{enumerate}
+    \item 梳理 ANNS 相关算法，包括 KD-Tree、LSH、PQ、IVF、HNSW 和 GPU 向量检索系统，明确本文实验与前人工作的关系。
+    \item 在 DEEP100K 数据集上实现并比较 Flat Scan、NEON SIMD、OpenMP、SQ-SIMD、PQ-SIMD 和 PQ-SIMD+OpenMP，分析 latency、recall 和 speedup 的关系。
+    \item 实现 CUDA 精确 Flat ANNS 查询程序，并在远端 TITAN Xp 服务器完成 GPU 查询实验和 CPU 子集正确性校验。
+    \item 明确区分借鉴内容和本文实现：PQ、双调排序等算法思想来自已有研究；本文工作在于课程数据集和指定平台上的实现、参数实验、跨并行层次对比与瓶颈分析。
+\end{enumerate}
+
+\section{相关工作}
+
+\subsection{近似最近邻搜索算法}
+
+早期最近邻搜索常使用树结构，例如 KD-Tree \cite{bentley1975multidimensional}，但在高维空间中容易受到维度灾难影响。局部敏感哈希（LSH）\cite{gionis1999similarity}通过哈希碰撞概率保持近邻关系，具有理论保证，但通常需要多表和较高内存开销。
+
+乘积量化（Product Quantization, PQ）\cite{jegou2010product}是大规模向量检索中的经典压缩方法。PQ 将高维向量划分为多个子空间，在每个子空间训练码本，并以 code 代替原始浮点向量。查询时通过查表累加完成非对称距离计算（ADC），可以显著降低内存占用和距离计算成本。OPQ \cite{ge2013optimized}进一步通过旋转变换优化子空间划分。IVF \cite{sivic2003video}使用粗聚类建立倒排文件，查询时仅访问最近的若干簇；IVF-PQ 则结合粗筛和 PQ 编码，是 Faiss 等系统中的重要索引结构 \cite{johnson2019billion}。
+
+图索引方法以 HNSW \cite{malkov2018efficient}为代表，通常具有很高召回率和较低延迟，但图遍历分支较多、访存不规则，单次查询内并行化难度高。FastScan \cite{andre2016cache}等研究表明，仅有缓存局部性不足以获得极致性能，还需要面向 SIMD 寄存器和查表结构进行专门设计。
+
+\subsection{GPU 向量检索与候选维护}
+
+向量检索不仅需要计算距离，还需要维护 Top-k 候选。Faiss 的 GPU 研究表明，十亿规模向量检索可以通过 GPU 批量距离计算、倒排桶扫描和高效候选选择获得显著吞吐提升 \cite{johnson2019billion}。GPU 排序研究也表明，规则数据并行算法在大规模输入上可以充分利用 GPU 吞吐和内存带宽 \cite{satish2009sorting}。本文 GPU 部分选择最直接、可验证的精确 Flat 查询作为基线：它不依赖近似索引，能够清楚展示 GPU 对高维向量扫描的加速潜力，也为后续 IVF-PQ GPU 化提供对照。
+
+\section{问题定义与评价指标}
+
+\subsection{距离与召回率}
+
+本文单机 ANNS 实验采用课程 DEEP100K 数据集，base 向量数量为 $100000$，维度为 $96$。距离函数使用内积距离：
+\[
+dist(q,x)=1-\sum_{i=0}^{d-1}q_i x_i
+\]
+召回率定义为：
+\[
+recall@k=\frac{|KNN(q)\cap KANN(q)|}{k}
+\]
+其中 $KNN(q)$ 为 ground truth 的真实 Top-k，$KANN(q)$ 为算法返回结果。
+
+\subsection{延迟与加速比}
+
+Average latency 表示单次 query 的平均查询延迟，单位为微秒。以串行 Flat Scan 为基准，加速比定义为：
+\[
+Speedup=\frac{Latency_{baseline}}{Latency_{optimized}}
+\]
+GPU 排序实验则以 CPU 双调排序为主要基准，同时记录 CPU \texttt{std::sort} 作为串行高效排序参考。
+
+\section{并行算法设计}
+
+\subsection{Flat Scan 与 NEON SIMD}
+
+Flat Scan 遍历全部 base 向量，对每个向量计算一次 96 维内积，并维护 Top-k 优先队列。该方法召回率最高，但计算量为 $O(Nd)$。由于 $d=96$ 能被 4 整除，ARM NEON 可以使用 \texttt{float32x4\_t} 一次处理 4 个单精度数，将 96 次标量乘加转化为 24 次向量乘加。
+
+\begin{lstlisting}[language=C++]
+float32x4_t acc = vdupq_n_f32(0.0f);
+for (int d = 0; d < 96; d += 4) {
+    float32x4_t va = vld1q_f32(base + d);
+    float32x4_t vb = vld1q_f32(query + d);
+    acc = vfmaq_f32(acc, va, vb);
+}
+\end{lstlisting}
+
+\subsection{OpenMP 多线程扫描}
+
+对于单个 query，不同 base 向量的距离计算互不依赖。OpenMP 版本将 base 索引划分给多个线程，每个线程维护局部 Top-k 队列，扫描结束后合并局部候选。该设计避免了距离计算阶段对全局队列加锁，适合 Flat Scan 这种负载均匀的任务。
+
+\subsection{SQ-SIMD 与 PQ-SIMD}
+
+SQ 将每一维浮点值线性量化为 uint8，粗排阶段使用更小的数据类型完成近似内积，再对 Top-p 候选使用原始浮点向量 rerank。SQ 的优势是实现简单、访存量低；缺点是逐维线性量化误差较大。
+
+PQ 将 96 维向量划分为 $M$ 个子空间，每个子空间独立训练 $K_s$ 个聚类中心。base 向量离线编码为 $M$ 个 code，查询时先构建 LUT：
+\[
+LUT[m][c] = dist(q_m, centroid_{m,c})
+\]
+随后对每个 base code 查表累加：
+\[
+dist_{PQ}(q,x)=\sum_{m=1}^{M} LUT[m][code_m(x)]
+\]
+最终仍对 Top-p 候选执行原始浮点 rerank。PQ 的离线训练与编码不计入在线查询延迟。
+
+\subsection{CUDA 精确 Flat ANNS}
+
+GPU 版本实现精确 Flat ANNS。对于每个 query，CUDA 启动一个线程块，块内 256 个线程按 stride 分片扫描全部 base 向量。每个线程在寄存器中维护自己的局部 Top-10，扫描结束后将局部候选写入全局内存。Host 侧读取每个 query 的 $256\times 10$ 个候选并合并为最终 Top-10。
+
+该设计保持了 Flat Search 的精确性，核心 kernel 只做规则的内积计算和小规模局部 Top-k 插入，避免了复杂索引结构对 GPU 实验的干扰。其并行粒度如下：
+\[
+q \rightarrow block,\quad base\_id \rightarrow threadIdx.x + t\cdot blockDim.x
+\]
+核心逻辑如下：
+
+\begin{lstlisting}[language=C++]
+int qid = blockIdx.x;
+for (int bid = threadIdx.x; bid < base_n; bid += blockDim.x) {
+    float ip = 0.0f;
+    for (int d = 0; d < dim; ++d) {
+        ip += base[bid * dim + d] * query[qid * dim + d];
+    }
+    insert_local_topk(1.0f - ip, bid);
+}
+\end{lstlisting}
+
+程序优先读取 \texttt{/anndata} 下的 DEEP100K 数据；若数据不存在，则生成固定随机种子的合成数据，并用 CPU 精确搜索对部分 query 做 recall 校验。
+
+\section{实验设置}
+
+\subsection{单机 ANNS 实验设置}
+
+\begin{table}[H]
+\centering
+\caption{DEEP100K 单机实验设置}
+\label{tab:dataset}
+\begin{tabular}{lr}
+\toprule
+项目 & 数值 \\
+\midrule
+base 向量数量 & 100000 \\
+query 向量数量 & 10000 \\
+实际测试 query 数量 & 2000 \\
+向量维度 & 96 \\
+Top-k & 10 \\
+距离函数 & inner product distance \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{单机并行实验平台}
+\label{tab:cpu_platform}
+\begin{tabular}{ll}
+\toprule
+项目 & 信息 \\
+\midrule
+CPU 架构 & ARM \\
+CPU 型号 & HiSilicon Kunpeng-920 \\
+核心数 & 8 核 \\
+编译器 & g++ (GCC) 10.3.1 \\
+编译参数 & \texttt{-O2 -fopenmp -lpthread -std=c++11} \\
+SIMD 指令集 & ARM NEON \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{GPU ANNS 实验设置}
+
+GPU 实验在用户提供的远端服务器上复核，连接信息为 \texttt{connect.nmb1.seetacloud.com:34559}。CUDA 未加入默认 PATH，实际使用 \texttt{/usr/local/cuda-12.8/bin/nvcc} 编译。该服务器未挂载课程 DEEP100K 数据文件，因此 GPU ANNS 实验使用程序自动生成的固定随机种子合成数据，规模保持为 100000 个 base 向量、2000 个 query、维度 96。正确性通过前 100 个 query 的 CPU 精确 Top-10 进行校验。
+
+\begin{table}[H]
+\centering
+\caption{GPU 复核实验平台}
+\label{tab:gpu_platform}
+\begin{tabular}{ll}
+\toprule
+项目 & 信息 \\
+\midrule
+GPU & NVIDIA TITAN Xp \\
+显存 & 11.9 GB \\
+SM 数量 & 30 \\
+Compute Capability & 6.1 \\
+Driver & 580.105.08 \\
+CUDA 编译器 & CUDA 12.8 nvcc \\
+操作系统 & Ubuntu 22.04.5 LTS \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{实验结果与分析}
+
+\subsection{Flat 系列性能}
+
+\begin{table}[H]
+\centering
+\caption{Flat 系列不同版本性能对比}
+\label{tab:flat_results}
+\begin{tabular}{lrrrr}
+\toprule
+版本 & threads & recall & latency(us) & speedup \\
+\midrule
+Flat baseline & 1 & 0.99995 & 20851.90 & 1.00 \\
+Flat NEON SIMD & 1 & 0.99995 & 7742.58 & 2.69 \\
+Flat OpenMP & 2 & 0.99995 & 15469.90 & 1.35 \\
+Flat OpenMP & 4 & 0.99995 & 4976.98 & 4.19 \\
+Flat OpenMP & 8 & 0.99995 & 2845.95 & 7.33 \\
+Flat OpenMP + NEON & 1 & 0.99995 & 7013.77 & 2.97 \\
+Flat OpenMP + NEON & 2 & 0.99995 & 2895.53 & 7.20 \\
+Flat OpenMP + NEON & 4 & 0.99995 & 1628.58 & 12.80 \\
+Flat OpenMP + NEON & 8 & 0.99995 & 747.76 & 27.89 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+NEON 单线程版本获得 2.69 倍加速，说明 96 维内积计算能够较好利用向量乘加。OpenMP 单独使用时，2 线程加速不明显，但线程数增加后收益逐渐体现。OpenMP 与 NEON 结合后效果最好，8 线程下平均延迟为 747.76 us，说明任务级并行和数据级并行可叠加。该结果也说明 Flat Scan 虽然算法复杂度高，但计算形态规则，是 SIMD 和多线程优化的友好对象。
+
+\subsection{量化方法的 latency-recall 折中}
+
+\begin{table}[H]
+\centering
+\caption{SQ-SIMD 不同 Top-p 下的性能}
+\label{tab:sq_results}
+\begin{tabular}{rrrr}
+\toprule
+top\_p & recall & latency(us) & speedup \\
+\midrule
+1000 & 0.17645 & 3941.61 & 5.29 \\
+2000 & 0.27565 & 4367.20 & 4.77 \\
+5000 & 0.45785 & 5795.56 & 3.60 \\
+10000 & 0.62815 & 8904.90 & 2.34 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{PQ-SIMD 不同 Top-p 下的性能}
+\label{tab:pq_results}
+\begin{tabular}{rrrrr}
+\toprule
+top\_p & pq\_m & pq\_ks & recall & latency(us) \\
+\midrule
+2000 & 8 & 128 & 0.99630 & 2830.47 \\
+5000 & 8 & 128 & 0.99960 & 4680.62 \\
+10000 & 8 & 128 & 0.99995 & 8019.73 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SQ 的粗排速度较快，但 recall 明显偏低，说明简单逐维线性量化不能很好保持原始内积排序。PQ 的效果更稳定：Top-p=2000 时 recall 已达到 0.99630，延迟为 2830.47 us，相比 Flat baseline 加速 7.37 倍；Top-p=10000 时 recall 与 Flat 接近，但延迟也升至 8019.73 us。该结果体现出 PQ 的典型优势：以较小召回损失换取访存压缩和近似距离计算。
+
+\subsection{PQ 多线程结果与瓶颈}
+
+\begin{table}[H]
+\centering
+\caption{PQ-SIMD + OpenMP 不同线程数性能}
+\label{tab:pq_omp_results}
+\begin{tabular}{rrrrr}
+\toprule
+threads & top\_p & recall & latency(us) & speedup \\
+\midrule
+1 & 5000 & 0.99960 & 5243.48 & 3.98 \\
+2 & 5000 & 0.99960 & 6786.91 & 3.07 \\
+4 & 5000 & 0.99960 & 8013.69 & 2.60 \\
+8 & 5000 & 0.99960 & 9604.74 & 2.17 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+PQ-SIMD+OpenMP 没有继续加速，线程数增加后反而变慢。原因在于 PQ 的在线 ADC 查表计算较轻，每个 query 内创建并调度并行区域、维护线程局部 Top-p、合并候选等开销超过了并行收益。因此，多线程不应机械套用到所有阶段。对于 PQ，更合理的方向是 query-level 并行、线程池复用、按倒排桶并行，或减少每个线程保留的候选数量。
+
+\subsection{OpenMP 调度策略}
+
+\begin{table}[H]
+\centering
+\caption{OpenMP 调度策略和 chunk 大小影响}
+\label{tab:schedule_results}
+\begin{tabular}{lrrr}
+\toprule
+schedule & threads & chunk & latency(us) \\
+\midrule
+static & 4 & 256 & 1582.50 \\
+dynamic & 4 & 256 & 1821.19 \\
+guided & 4 & 256 & 1857.32 \\
+static & 4 & 64 & 1804.33 \\
+static & 4 & 1024 & 1459.06 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Flat Scan 中每个 base 向量计算量基本一致，因此 static 调度最合适。dynamic 和 guided 的动态负载均衡能力无法带来额外收益，反而增加运行时管理开销。chunk=1024 的结果最好，说明较大的连续块有利于减少调度次数和改善内存访问局部性。
+
+\subsection{GPU ANNS 结果}
+
+\begin{table}[H]
+\centering
+\caption{TITAN Xp 上 CUDA Flat ANNS 实验结果}
+\label{tab:gpu_ann_results}
+\begin{tabular}{lr}
+\toprule
+项目 & 结果 \\
+\midrule
+数据类型 & synthetic normalized float vectors \\
+base 向量数量 & 100000 \\
+query 数量 & 2000 \\
+向量维度 & 96 \\
+Top-k & 10 \\
+校验 query 数量 & 100 \\
+recall@10 & 1.0000 \\
+GPU kernel 总时间 & 1218.8177 ms \\
+结果拷贝与 host 合并时间 & 16.8035 ms \\
+平均 kernel latency & 609.4089 us/query \\
+平均总 latency & 617.8106 us/query \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+GPU Flat ANNS 对每个 query 扫描全部 100000 个 base 向量，因此计算量与 CPU Flat Scan 一致，仍是精确搜索。实验中 kernel 平均延迟为 609.41 us/query，含 partial Top-k 拷贝和 host 合并后的平均总延迟为 617.81 us/query。相较 ARM CPU 上 Flat OpenMP+NEON 8 线程的 747.76 us/query，TITAN Xp 上的精确 GPU Flat 仍有一定优势；如果与 CPU 串行 Flat baseline 的 20851.90 us/query 对比，则 GPU kernel 约为 34.22 倍加速。需要注意，该对比跨越了不同硬件平台和不同数据源，只能说明 GPU 批量规则扫描的潜力，不能作为严格同机加速比。
+
+正确性方面，由于合成数据没有预置 ground truth，程序对前 100 个 query 执行 CPU 精确 Flat Search，并将 GPU 返回的 Top-10 与 CPU 结果比较，得到 recall@10=1.0000。这说明 kernel 的距离计算、局部 Top-k 和 host 合并逻辑正确。
+
+\section{综合讨论}
+
+\subsection{不同并行层次的适用边界}
+
+实验结果显示，不同并行技术的收益取决于计算粒度和访存模式。
+
+\begin{itemize}
+    \item SIMD 适合固定维度、连续内存、循环结构简单的距离计算。DEEP100K 的 96 维内积正好符合该条件。
+    \item OpenMP 适合负载均匀、任务粒度足够大的扫描过程。Flat Scan 可以明显受益，但 PQ 单 query 内 ADC 查表粒度过轻，线程管理成本反而更高。
+    \item PQ 通过编码压缩降低访存和计算，但需要在 recall 与 latency 之间选择 Top-p 参数。相比 SQ，PQ 的聚类码本更能保留向量空间结构。
+    \item GPU 适合大批量规则向量扫描。精确 Flat ANNS 每个 query 的 base 扫描相互独立，映射到 CUDA block 后能充分利用线程并行；但 partial Top-k 的设备到主机拷贝和 host 合并仍是后续优化点。
+\end{itemize}
+
+\subsection{前人工作与本文实现的区分}
+
+本文没有提出全新的 ANNS 理论算法。PQ、IVF、HNSW、FastScan 和 GPU 向量检索均来自已有研究。本文的主要工作量在于：第一，围绕课程数据集实现多版本 ANNS 查询算子；第二，在 ARM 平台上对 NEON、OpenMP、SQ/PQ 和调度策略进行对比实验；第三，在远端 NVIDIA GPU 上实现并复核 CUDA 精确 Flat ANNS 查询；第四，将三次平时作业整理为一个统一的期末研究问题，并给出不同并行层次的适用性分析。
+
+\subsection{局限性}
+
+本文仍有三个局限。第一，远端 GPU 服务器没有挂载课程 DEEP100K 数据，因此 GPU ANNS 使用同规模合成数据完成可复现实验，尚未在真实 DEEP100K 上复核 recall。第二，GPU 版本目前是精确 Flat Search，没有实现 GPU IVF-PQ 或 GPU PQ ADC，因此还不是完整的近似索引 GPU 化。第三，PQ 多线程实现仍是 query 内并行，没有实现 query-level batch 并行或线程池复用，导致多线程结果不理想。
+
+\section{结论}
+
+本文围绕近似最近邻搜索核心计算进行了 CPU/GPU 多层次并行优化研究。实验表明，SIMD 与 OpenMP 对 Flat Scan 这种规则高维距离计算具有显著收益，二者结合在 8 线程下获得 27.89 倍加速；PQ-SIMD 能在 Top-p=2000 时保持 0.99630 recall，并获得 7.37 倍加速，优于简单 SQ 量化；PQ 的单 query 内多线程并不总是有效，线程调度和候选合并成本可能超过 ADC 查表收益。GPU Flat ANNS 实验表明，在 TITAN Xp 上对 100000 个 96 维 base 向量和 2000 个 query 做精确扫描时，平均 kernel latency 为 609.41 us/query，并在 100 个 query 的 CPU 子集校验中达到 recall@10=1.0000。
+
+综合来看，ANNS 系统优化不能只依赖单一并行手段，而应按计算阶段选择合适层次：距离计算使用 SIMD，粗粒度扫描使用多线程，压缩检索使用 PQ/IVF，批量规则向量扫描交给 GPU。后续工作可进一步实现 GPU IVF-PQ 完整系统，将 PQ ADC、倒排桶扫描和 Top-k 合并全部放到设备侧，并补充跨平台 AVX/NEON/CUDA 的系统性对比。
+
+\newpage
+\bibliographystyle{plain}
+\bibliography{references}
+
+\newpage
+\appendix
+\section{代码与运行说明}
+
+\subsection{本地提交目录}
+
+\begin{table}[H]
+\centering
+\caption{期末目录文件说明}
+\label{tab:files}
+\begin{tabular}{ll}
+\toprule
+文件 & 作用 \\
+\midrule
+\texttt{main.tex} & 期末研究报告 LaTeX 源文件 \\
+\texttt{references.bib} & 参考文献数据库 \\
+\texttt{NKU.png} & 封面校徽图片 \\
+\texttt{gpu\_remote\_results.txt} & 远端 GPU 复核运行结果摘要 \\
+\texttt{experiment\_results/gpu\_ann\_cuda.txt} & CUDA Flat ANNS 运行结果 \\
+\texttt{src/gpu\_ann/src/ann\_gpu\_cuda.cu} & CUDA Flat ANNS 实现 \\
+\texttt{src/gpu\_ann/src/Makefile} & CUDA Flat ANNS 编译脚本 \\
+\texttt{src/gpu\_bitonic/bitonic\_sort\_cuda.cu} & CUDA 双调排序实现 \\
+\texttt{src/gpu\_bitonic/bitonic\_sort\_cpu.cpp} & CPU 双调排序和 \texttt{std::sort} 对照 \\
+\texttt{src/gpu\_bitonic/Makefile} & GPU 实验编译脚本 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{GPU 复核命令}
+
+\begin{lstlisting}[language=bash]
+ssh -p 34559 root@connect.nmb1.seetacloud.com
+cd /root/ann-homework-final/gpu_ann/src
+make clean all
+./ann_gpu_cuda /anndata 2000 100000 100
+\end{lstlisting}
+
+\subsection{源码链接}
+
+平时作业源码仓库链接如下：
+
+\begin{lstlisting}
+https://github.com/Tgotp/ann-homework.git
+\end{lstlisting}
+
+\end{document}

@@ -1,0 +1,37 @@
+Remote GPU verification on connect.nmb1.seetacloud.com, 2026-07-15.
+
+GPU:
+NVIDIA TITAN Xp, CUDA compute capability 6.1, 30 SMs, 11.9 GB global memory.
+Driver version: 580.105.08.
+CUDA compiler: /usr/local/cuda-12.8/bin/nvcc.
+
+Command:
+cd /root/parallel_final_gpu/src
+PATH=/usr/local/cuda-12.8/bin:$PATH make clean all
+./bitonic_sort_cuda
+
+Output summary:
+Size         GPU Time (ms)  CPU Time (ms)  Speedup    Correct
+256          0.151          0.030          0.20x      yes
+1024         0.137          0.143          1.04x      yes
+4096         0.180          0.720          4.01x      yes
+16384        0.230          3.546          15.42x     yes
+65536        0.329          17.996         54.64x     yes
+262144       0.739          85.806         116.19x    yes
+1048576      3.899          402.597        103.26x    yes
+4194304      17.278         1852.128       107.19x    yes
+
+Command:
+./bitonic_sort_cpu
+
+Output summary:
+Size         CPU Bitonic(ms)  std::sort(ms)
+256          0.033            0.009
+1024         0.182            0.053
+4096         0.950            0.250
+16384        4.394            1.153
+65536        21.837           5.347
+262144       96.774           19.635
+1048576      398.992          81.396
+4194304      1898.950         326.991
+16777216     8409.292         1276.791

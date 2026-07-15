@@ -1,0 +1,12 @@
+dataset: synthetic
+base_n: 100000
+query_n: 2000
+dim: 96
+gpu: NVIDIA TITAN Xp
+sms: 30
+recall@10: 1.0000
+recall_queries: 100
+kernel_time_ms: 1218.8177
+copy_merge_time_ms: 16.8035
+avg_kernel_latency_us: 609.4089
+avg_total_latency_us: 617.8106
