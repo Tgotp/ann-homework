@@ -100,6 +100,16 @@ struct IVFIndex {
     uint32_t dim = 0;
     std::vector<float> centroids;
     std::vector<std::vector<int>> lists;
+    std::vector<int> assignments;
+};
+
+struct PQIndex {
+    uint32_t m = 0;
+    uint32_t ks = 0;
+    uint32_t dim = 0;
+    uint32_t subdim = 0;
+    std::vector<float> codebook;
+    std::vector<uint8_t> codes;
 };
 
 IVFIndex build_ivf(const std::vector<float>& base, uint32_t base_n, uint32_t dim, uint32_t nlist, uint32_t train_n, int iters) {
@@ -108,6 +118,7 @@ IVFIndex build_ivf(const std::vector<float>& base, uint32_t base_n, uint32_t dim
     index.dim = dim;
     index.centroids.assign(static_cast<size_t>(nlist) * dim, 0.0f);
     index.lists.resize(nlist);
+    index.assignments.assign(base_n, 0);
     train_n = std::min(train_n, base_n);
 
     for (uint32_t c = 0; c < nlist; ++c) {
@@ -164,10 +175,121 @@ IVFIndex build_ivf(const std::vector<float>& base, uint32_t base_n, uint32_t dim
                 best_id = c;
             }
         }
+        index.assignments[i] = static_cast<int>(best_id);
         local_lists[best_id].push_back(static_cast<int>(i));
     }
     index.lists.swap(local_lists);
     return index;
+}
+
+float sub_l2_distance(const float* a, const float* b, uint32_t subdim) {
+    float sum = 0.0f;
+    for (uint32_t d = 0; d < subdim; ++d) {
+        float diff = a[d] - b[d];
+        sum += diff * diff;
+    }
+    return sum;
+}
+
+float sub_dot(const float* a, const float* b, uint32_t subdim) {
+    float sum = 0.0f;
+    for (uint32_t d = 0; d < subdim; ++d) sum += a[d] * b[d];
+    return sum;
+}
+
+PQIndex build_residual_pq(const std::vector<float>& base, const IVFIndex& ivf, uint32_t base_n, uint32_t dim, uint32_t m, uint32_t ks, uint32_t train_n, int iters) {
+    PQIndex pq;
+    pq.m = m;
+    pq.ks = ks;
+    pq.dim = dim;
+    pq.subdim = dim / m;
+    pq.codebook.assign(static_cast<size_t>(m) * ks * pq.subdim, 0.0f);
+    pq.codes.assign(static_cast<size_t>(base_n) * m, 0);
+    train_n = std::min(train_n, base_n);
+
+    for (uint32_t part = 0; part < m; ++part) {
+        float* cb = pq.codebook.data() + static_cast<size_t>(part) * ks * pq.subdim;
+        for (uint32_t c = 0; c < ks; ++c) {
+            uint32_t src = static_cast<uint64_t>(c) * train_n / ks;
+            const float* src_ptr = base.data() + static_cast<size_t>(src) * dim + part * pq.subdim;
+            const float* center = ivf.centroids.data() + static_cast<size_t>(ivf.assignments[src]) * dim + part * pq.subdim;
+            float* dst = cb + static_cast<size_t>(c) * pq.subdim;
+            for (uint32_t d = 0; d < pq.subdim; ++d) dst[d] = src_ptr[d] - center[d];
+        }
+
+        std::vector<int> label(train_n, 0);
+        for (int iter = 0; iter < iters; ++iter) {
+#pragma omp parallel for schedule(static)
+            for (int i = 0; i < static_cast<int>(train_n); ++i) {
+                const float* v = base.data() + static_cast<size_t>(i) * dim + part * pq.subdim;
+                const float* center = ivf.centroids.data() + static_cast<size_t>(ivf.assignments[i]) * dim + part * pq.subdim;
+                float best = std::numeric_limits<float>::max();
+                int best_id = 0;
+                for (uint32_t c = 0; c < ks; ++c) {
+                    float residual_dis = 0.0f;
+                    const float* centroid = cb + static_cast<size_t>(c) * pq.subdim;
+                    for (uint32_t d = 0; d < pq.subdim; ++d) {
+                        float residual = v[d] - center[d];
+                        float diff = residual - centroid[d];
+                        residual_dis += diff * diff;
+                    }
+                    float dis = residual_dis;
+                    if (dis < best) {
+                        best = dis;
+                        best_id = static_cast<int>(c);
+                    }
+                }
+                label[i] = best_id;
+            }
+
+            std::vector<float> sums(static_cast<size_t>(ks) * pq.subdim, 0.0f);
+            std::vector<int> counts(ks, 0);
+            for (uint32_t i = 0; i < train_n; ++i) {
+                int c = label[i];
+                ++counts[c];
+                const float* v = base.data() + static_cast<size_t>(i) * dim + part * pq.subdim;
+                const float* center = ivf.centroids.data() + static_cast<size_t>(ivf.assignments[i]) * dim + part * pq.subdim;
+                float* sum = sums.data() + static_cast<size_t>(c) * pq.subdim;
+                for (uint32_t d = 0; d < pq.subdim; ++d) sum[d] += v[d] - center[d];
+            }
+            for (uint32_t c = 0; c < ks; ++c) {
+                if (counts[c] == 0) continue;
+                float inv = 1.0f / counts[c];
+                float* dst = cb + static_cast<size_t>(c) * pq.subdim;
+                float* sum = sums.data() + static_cast<size_t>(c) * pq.subdim;
+                for (uint32_t d = 0; d < pq.subdim; ++d) dst[d] = sum[d] * inv;
+            }
+        }
+    }
+
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < static_cast<int>(base_n); ++i) {
+        const float* v = base.data() + static_cast<size_t>(i) * dim;
+        const float* center = ivf.centroids.data() + static_cast<size_t>(ivf.assignments[i]) * dim;
+        for (uint32_t part = 0; part < m; ++part) {
+            const float* sub = v + part * pq.subdim;
+            const float* center_sub = center + part * pq.subdim;
+            const float* cb = pq.codebook.data() + static_cast<size_t>(part) * ks * pq.subdim;
+            float best = std::numeric_limits<float>::max();
+            uint32_t best_id = 0;
+            for (uint32_t c = 0; c < ks; ++c) {
+                float residual_dis = 0.0f;
+                const float* centroid = cb + static_cast<size_t>(c) * pq.subdim;
+                for (uint32_t d = 0; d < pq.subdim; ++d) {
+                    float residual = sub[d] - center_sub[d];
+                    float diff = residual - centroid[d];
+                    residual_dis += diff * diff;
+                }
+                float dis = residual_dis;
+                if (dis < best) {
+                    best = dis;
+                    best_id = c;
+                }
+            }
+            pq.codes[static_cast<size_t>(i) * m + part] = static_cast<uint8_t>(best_id);
+        }
+    }
+    return pq;
 }
 
 std::vector<int> search_ivf_batch(
@@ -205,6 +327,72 @@ std::vector<int> search_ivf_batch(
         while (!heap.empty() && out >= 0) {
             result[static_cast<size_t>(qi) * kTopK + out] = heap.top().second;
             heap.pop();
+            --out;
+        }
+    }
+    return result;
+}
+
+std::vector<int> search_ivfpq_rerank_batch(
+    const IVFIndex& ivf,
+    const PQIndex& pq,
+    const std::vector<float>& base,
+    const std::vector<float>& query,
+    uint32_t query_n,
+    uint32_t dim,
+    uint32_t nprobe,
+    uint32_t rerank_p) {
+    std::vector<int> result(static_cast<size_t>(query_n) * kTopK, -1);
+#pragma omp parallel for schedule(dynamic)
+    for (int qi = 0; qi < static_cast<int>(query_n); ++qi) {
+        const float* q = query.data() + static_cast<size_t>(qi) * dim;
+        std::priority_queue<Item> probe_heap;
+        for (uint32_t c = 0; c < ivf.nlist; ++c) {
+            float dis = l2_distance(q, ivf.centroids.data() + static_cast<size_t>(c) * dim, dim);
+            push_topk(probe_heap, dis, static_cast<int>(c), nprobe);
+        }
+        std::vector<int> probes;
+        while (!probe_heap.empty()) {
+            probes.push_back(probe_heap.top().second);
+            probe_heap.pop();
+        }
+
+        std::vector<float> lut(static_cast<size_t>(pq.m) * pq.ks, 0.0f);
+        for (uint32_t part = 0; part < pq.m; ++part) {
+            const float* qsub = q + part * pq.subdim;
+            const float* cb = pq.codebook.data() + static_cast<size_t>(part) * pq.ks * pq.subdim;
+            for (uint32_t c = 0; c < pq.ks; ++c) {
+                lut[static_cast<size_t>(part) * pq.ks + c] =
+                    sub_dot(qsub, cb + static_cast<size_t>(c) * pq.subdim, pq.subdim);
+            }
+        }
+
+        std::priority_queue<Item> approx_heap;
+        for (int c : probes) {
+            float center_ip = 0.0f;
+            const float* center = ivf.centroids.data() + static_cast<size_t>(c) * dim;
+            for (uint32_t d = 0; d < dim; ++d) center_ip += q[d] * center[d];
+            for (int id : ivf.lists[c]) {
+                const uint8_t* code = pq.codes.data() + static_cast<size_t>(id) * pq.m;
+                float ip = center_ip;
+                for (uint32_t part = 0; part < pq.m; ++part) {
+                    ip += lut[static_cast<size_t>(part) * pq.ks + code[part]];
+                }
+                push_topk(approx_heap, 1.0f - ip, id, rerank_p);
+            }
+        }
+
+        std::priority_queue<Item> exact_heap;
+        while (!approx_heap.empty()) {
+            int id = approx_heap.top().second;
+            approx_heap.pop();
+            float dis = ip_distance(base.data() + static_cast<size_t>(id) * dim, q, dim);
+            push_topk(exact_heap, dis, id, kTopK);
+        }
+        int out = kTopK - 1;
+        while (!exact_heap.empty() && out >= 0) {
+            result[static_cast<size_t>(qi) * kTopK + out] = exact_heap.top().second;
+            exact_heap.pop();
             --out;
         }
     }
@@ -285,6 +473,28 @@ int main(int argc, char** argv) {
                   << "\t" << std::setprecision(3) << (pair.second * 1000.0 / query_n)
                   << "\t" << ivf_build_ms
                   << "\tnlist=128\n";
+    }
+
+    auto build_pq_start = std::chrono::high_resolution_clock::now();
+    PQIndex pq = build_residual_pq(base, ivf, base_n, dim, 8, 128, std::min<uint32_t>(20000, base_n), 4);
+    auto build_pq_stop = std::chrono::high_resolution_clock::now();
+    double pq_build_ms = std::chrono::duration<double, std::milli>(build_pq_stop - build_pq_start).count();
+    double ivfpq_build_ms = ivf_build_ms + pq_build_ms;
+
+    const std::vector<std::pair<uint32_t, uint32_t>> ivfpq_settings = {
+        {8u, 200u}, {16u, 200u}, {32u, 200u}, {16u, 1000u}, {32u, 1000u}
+    };
+    for (auto setting : ivfpq_settings) {
+        uint32_t nprobe = setting.first;
+        uint32_t rerank_p = setting.second;
+        auto pair = timed_search([&] {
+            return search_ivfpq_rerank_batch(ivf, pq, base, query, query_n, dim, nprobe, rerank_p);
+        });
+        std::cout << "ivf_pq_nprobe" << nprobe << "_rerank" << rerank_p << "\t"
+                  << std::fixed << std::setprecision(6) << recall_at_10(pair.first, gt, query_n)
+                  << "\t" << std::setprecision(3) << (pair.second * 1000.0 / query_n)
+                  << "\t" << ivfpq_build_ms
+                  << "\tnlist=128 m=8 ks=128 residual rerank=" << rerank_p << "\n";
     }
 
     hnswlib::InnerProductSpace ipspace(dim);

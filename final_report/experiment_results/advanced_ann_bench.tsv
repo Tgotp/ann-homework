@@ -1,9 +1,14 @@
 name	recall	latency_us	build_ms	extra
-flat_exact_cpu	1.000000	1069.01	0	threads=16
-ivf_flat_nprobe4	0.846000	60.584	1231.258	nlist=128
-ivf_flat_nprobe8	0.929500	73.019	1231.258	nlist=128
-ivf_flat_nprobe16	0.974000	143.992	1231.258	nlist=128
-ivf_flat_nprobe32	0.994000	529.400	1231.258	nlist=128
-hnsw_ef32	0.935500	49.956	12581.934	M=16 efC=100
-hnsw_ef64	0.983500	87.359	12581.934	M=16 efC=100
-hnsw_ef128	0.993500	140.973	12581.934	M=16 efC=100
+flat_exact_cpu	1.000000	988.015	0	threads=16
+ivf_flat_nprobe4	0.846000	58.002	1187.639	nlist=128
+ivf_flat_nprobe8	0.929500	78.581	1187.639	nlist=128
+ivf_flat_nprobe16	0.974000	296.293	1187.639	nlist=128
+ivf_flat_nprobe32	0.994000	571.833	1187.639	nlist=128
+ivf_pq_nprobe8_rerank200	0.826500	23.574	1616.503	nlist=128 m=8 ks=128 residual rerank=200
+ivf_pq_nprobe16_rerank200	0.843000	27.786	1616.503	nlist=128 m=8 ks=128 residual rerank=200
+ivf_pq_nprobe32_rerank200	0.850000	42.533	1616.503	nlist=128 m=8 ks=128 residual rerank=200
+ivf_pq_nprobe16_rerank1000	0.963500	178.010	1616.503	nlist=128 m=8 ks=128 residual rerank=1000
+ivf_pq_nprobe32_rerank1000	0.975500	86.886	1616.503	nlist=128 m=8 ks=128 residual rerank=1000
+hnsw_ef32	0.935500	50.874	13184.234	M=16 efC=100
+hnsw_ef64	0.983500	88.599	13184.234	M=16 efC=100
+hnsw_ef128	0.993500	162.382	13184.234	M=16 efC=100

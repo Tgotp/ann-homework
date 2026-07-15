@@ -4,7 +4,7 @@
 
 实验平台主要为课程服务器的 ARM AArch64 环境。代码在 AArch64 上使用 NEON 指令实现手写 SIMD，同时保留了 x86 SIMD 与标量回退分支，便于在不同平台上编译。
 
-期末补充材料位于 `final_report/`，报告中整合了 Flat、IVF-Flat、PQ-SIMD、HNSW 与 CUDA Flat ANNS 的对比实验。`advanced_bench/` 提供 IVF-Flat 与 HNSW 参数实验源码，`gpu_ann/` 提供 CUDA Flat ANNS 源码，相关结果见 `experiment_results/`。
+期末补充材料位于 `final_report/`，报告中整合了 Flat、IVF-Flat、Residual IVF-PQ、PQ-SIMD、HNSW 与 CUDA Flat ANNS 的对比实验。`advanced_bench/` 提供 IVF-Flat、Residual IVF-PQ 与 HNSW 参数实验源码，`gpu_ann/` 提供 CUDA Flat ANNS 源码，相关结果见 `experiment_results/`。
 
 ## 实现内容
 
@@ -32,8 +32,8 @@
 | `files/ann_config.txt` | 运行时参数配置文件 |
 | `run_experiments.sh` | 自动批量运行实验并收集结果 |
 | `experiment_results/summary.tsv` | 已完成实验的结果汇总 |
-| `experiment_results/advanced_ann_bench.tsv` | IVF-Flat 与 HNSW 参数实验结果 |
-| `advanced_bench/` | IVF-Flat 与 HNSW 对比实验源码 |
+| `experiment_results/advanced_ann_bench.tsv` | IVF-Flat、Residual IVF-PQ 与 HNSW 参数实验结果 |
+| `advanced_bench/` | IVF-Flat、Residual IVF-PQ 与 HNSW 对比实验源码 |
 | `gpu_ann/` | CUDA Flat ANNS 实验源码 |
 | `final_report/` | 期末研究报告与 Overleaf 材料 |
 | `test.sh` / `qsub.sh` | 课程服务器提交与测试脚本 |
